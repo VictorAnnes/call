@@ -146,7 +146,7 @@ async function startShare() {
       video: { width: { ideal: w }, height: { ideal: h }, frameRate: { ideal: fps, max: fps } },
       audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
   } catch (e) { return toast(e.name === 'NotAllowedError' ? 'Compartilhamento cancelado.' : 'Erro: ' + e.message); }
-  const [vt] = S.screenStream.getVideoTracks(); vt.contentHint = 'motion';
+  const [vt] = S.screenStream.getVideoTracks(); vt.contentHint = prio().hint;
   vt.onended = stopShare;
   if (!S.screenStream.getAudioTracks().length) toast('Sem áudio do sistema. No Chrome, marque "Compartilhar áudio da guia/sistema".', 7000);
   const pc = S.call.peerConnection;
@@ -160,17 +160,37 @@ function setCodec(pc) {       // preferência de codec no transceiver de vídeo
   const pref = [...caps.filter(c => c.mimeType === mime), ...caps.filter(c => c.mimeType !== mime)];
   pc.getTransceivers().forEach(t => { if (t.sender.track === S.screenStream.getVideoTracks()[0]) t.setCodecPreferences?.(pref); });
 }
+const prio = () => ({ fluidez: { hint: 'motion', deg: 'maintain-framerate' }, equilibrado: { hint: 'motion', deg: 'balanced' }, nitidez: { hint: 'detail', deg: 'maintain-resolution' } })[$('prioSel').value];
 async function applyBitrate() {   // <<< AJUSTE O BITRATE AQUI (ou no slider em Config) >>>
   const snd = S.shareSenders?.find(s => s.track?.kind === 'video'); if (!snd) return;
   const p = snd.getParameters(); if (!p.encodings?.length) p.encodings = [{}];
-  p.encodings[0].maxBitrate = cfg().br;           // bps. 8000 kbps = 8_000_000
-  p.encodings[0].maxFramerate = cfg().fps;
-  p.degradationPreference = 'maintain-framerate';
-  try { await snd.setParameters(p); } catch (e) { console.warn(e); }
+  const e = p.encodings[0];
+  e.maxBitrate = cfg().br;                 // bps. 8000 kbps = 8_000_000
+  e.maxFramerate = cfg().fps;
+  e.scaleResolutionDownBy = 1;             // nunca reduzir a resolução por conta própria
+  e.priority = 'high'; e.networkPriority = 'high';
+  p.degradationPreference = prio().deg;
+  snd.track.contentHint = prio().hint;
+  try { await snd.setParameters(p); } catch (err) { console.warn(err); }
+}
+// Faz o Chrome começar já em bitrate alto (em vez de subir devagar e ficar borrado)
+function boostSdp(sdp, kbps) {
+  const par = `x-google-start-bitrate=${Math.round(kbps * 0.7)};x-google-min-bitrate=${Math.round(kbps * 0.4)};x-google-max-bitrate=${kbps}`;
+  return sdp.split('\r\nm=').map((sec, i) => {
+    if (i === 0 || !sec.startsWith('video ')) return sec;
+    const lines = sec.split('\r\n'), ok = {}, has = {};
+    lines.forEach(l => { let m = l.match(/^a=rtpmap:(\d+) (\w+)\//); if (m && /^(VP8|VP9|H264|AV1)$/i.test(m[2])) ok[m[1]] = 1;
+      m = l.match(/^a=fmtp:(\d+) /); if (m) has[m[1]] = 1; });
+    const out = [];
+    lines.forEach(l => { const f = l.match(/^a=fmtp:(\d+) /);
+      out.push(f && ok[f[1]] && !l.includes('x-google') ? l + ';' + par : l);
+      const r = l.match(/^a=rtpmap:(\d+) /); if (r && ok[r[1]] && !has[r[1]]) out.push(`a=fmtp:${r[1]} ${par}`); });
+    return out.join('\r\n');
+  }).join('\r\nm=');
 }
 async function renegotiate() {  // PeerJS não renegocia sozinho: usa o próprio RTCPeerConnection + canal de dados
   if (!S.conn || !S.conn.open) await openData();
-  const pc = S.call.peerConnection, offer = await pc.createOffer(); await pc.setLocalDescription(offer);
+  const pc = S.call.peerConnection, offer = await pc.createOffer(); offer.sdp = boostSdp(offer.sdp, cfg().br / 1000); await pc.setLocalDescription(offer);
   S.conn.send({ type: 'offer', sdp: pc.localDescription.toJSON ? pc.localDescription.toJSON() : pc.localDescription });
 }
 function openData() { return new Promise(res => { if (S.conn?.open) return res();
@@ -210,12 +230,15 @@ function statsLoop() {
   clearInterval(S.st);
   S.st = setInterval(async () => {
     const pc = S.call?.peerConnection; if (!pc) return;
-    const rep = await pc.getStats(); let rtt = 0, inBytes = 0, outBytes = 0, now = performance.now();
+    const rep = await pc.getStats(); let rtt = 0, bytes = 0, now = performance.now(), w = 0, h = 0, fps = 0, lim = '';
     rep.forEach(r => { if (r.type === 'candidate-pair' && r.state === 'succeeded' && r.nominated) rtt = (r.currentRoundTripTime || 0) * 1000;
-      if (r.type === 'inbound-rtp' && r.kind === 'video') inBytes += r.bytesReceived;
-      if (r.type === 'outbound-rtp' && r.kind === 'video') outBytes += r.bytesSent; });
-    const bytes = inBytes + outBytes;
-    if (S.lastT) { const kbps = ((bytes - S.lastBytes) * 8) / (now - S.lastT); $('stats').textContent = `${Math.round(rtt)} ms · ${Math.round(kbps)} kbps`; $('peerInfo').textContent = `${Math.round(rtt)} ms`; }
+      if ((r.type === 'inbound-rtp' || r.type === 'outbound-rtp') && r.kind === 'video') {
+        bytes += r.bytesReceived || r.bytesSent || 0; w = r.frameWidth || w; h = r.frameHeight || h; fps = Math.round(r.framesPerSecond || fps);
+        if (r.qualityLimitationReason && r.qualityLimitationReason !== 'none') lim = r.qualityLimitationReason; } });
+    if (S.lastT) { const kbps = ((bytes - S.lastBytes) * 8) / (now - S.lastT);
+      const vid = w ? ` · ${w}x${h}@${fps}` : '';
+      const why = lim ? ` · limite: ${lim === 'bandwidth' ? 'rede' : lim === 'cpu' ? 'CPU' : lim}` : '';
+      $('stats').textContent = `${Math.round(rtt)} ms · ${Math.round(kbps)} kbps${vid}${why}`; $('peerInfo').textContent = `${Math.round(rtt)} ms`; }
     S.lastBytes = bytes; S.lastT = now;
   }, 1000);
 }
@@ -227,7 +250,12 @@ $('studio').onchange = e => { ['ns', 'ec', 'agc'].forEach(i => { $(i).disabled =
 $('closeSet').onclick = async () => { $('settings').classList.add('hidden');
   try { await getMic(); } catch (e) { toast('Erro no microfone: ' + e.message); }
   const o = $('outSel').value; if (o && $('peerAudio').setSinkId) { try { await $('peerAudio').setSinkId(o); await ctx().setSinkId?.(o); } catch {} }
+  const vt = S.screenStream?.getVideoTracks()[0];
+  if (vt) { const { res, fps } = cfg(); vt.applyConstraints({ width: { ideal: Math.round(res * 16 / 9) }, height: { ideal: res }, frameRate: { ideal: fps, max: fps } }).catch(() => {}); }
   applyBitrate(); };
+$('presetSel').onchange = e => { const P = { cel: [720, 60, 'H264', 8000, 'equilibrado'], alta: [1080, 60, 'H264', 15000, 'fluidez'], nitido: [1080, 30, 'H264', 10000, 'nitidez'] }[e.target.value]; if (!P) return;
+  $('resSel').value = P[0]; $('fpsSel').value = P[1]; $('codecSel').value = P[2]; $('brRange').value = P[3]; $('brLbl').textContent = P[3]; $('prioSel').value = P[4]; };
+['resSel', 'fpsSel', 'codecSel', 'prioSel', 'brRange'].forEach(i => $(i).addEventListener('change', () => $('presetSel').value = 'custom'));
 $('copyBtn').onclick = () => navigator.clipboard.writeText(`${location.origin}${location.pathname}?room=${S.room}`).then(() => toast('Link copiado!'));
 $('reconBtn').onclick = () => { S.voiceId = null; connect(); };
 $('leaveBtn').onclick = () => { S.peer?.destroy(); S.micStream?.getTracks().forEach(t => t.stop()); S.screenStream?.getTracks().forEach(t => t.stop()); location.href = location.pathname; };

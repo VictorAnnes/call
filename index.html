@@ -97,9 +97,13 @@
     </div>
     <hr class="border-zinc-800">
     <div class="grid grid-cols-3 gap-2 text-sm">
-      <label>Resolução <select id="resSel" class="sel"><option value="720">720p</option><option value="1080" selected>1080p</option><option value="1440">1440p</option></select></label>
+      <label>Resolução <select id="resSel" class="sel"><option value="720" selected>720p</option><option value="1080">1080p</option><option value="1440">1440p</option></select></label>
       <label>FPS <select id="fpsSel" class="sel"><option>30</option><option selected>60</option></select></label>
       <label>Codec <select id="codecSel" class="sel"><option value="H264" selected>H.264 (celular)</option><option value="VP9">VP9</option><option value="VP8">VP8</option></select></label>
+    </div>
+    <div class="grid grid-cols-2 gap-2 text-sm">
+      <label>Preset <select id="presetSel" class="sel"><option value="cel">Celular (720p60)</option><option value="alta">Alta (1080p60)</option><option value="nitido">Nítido (1080p30)</option><option value="custom">Personalizado</option></select></label>
+      <label>Prioridade <select id="prioSel" class="sel"><option value="equilibrado" selected>Equilibrado</option><option value="fluidez">Fluidez (FPS)</option><option value="nitidez">Nitidez</option></select></label>
     </div>
     <label class="block text-sm">Bitrate máx.: <span id="brLbl">8000</span> kbps
       <input id="brRange" type="range" min="2000" max="20000" step="500" value="8000" class="w-full"></label>
