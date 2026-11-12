@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nossa Call</title>
+<meta name="description" content="Call de voz e compartilhamento de tela privados, P2P.">
+<meta name="theme-color" content="#000000">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Nossa Call">
+<meta name="robots" content="noindex,nofollow">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<script src="https://cdn.tailwindcss.com/3.4.17"></script>
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="bg-black text-zinc-200 h-screen flex flex-col overflow-hidden">
+
+<!-- Lobby -->
+<div id="lobby" class="flex-1 flex items-center justify-center p-6">
+  <div class="w-full max-w-sm bg-zinc-900 rounded-2xl p-6 space-y-4 border border-zinc-800">
+    <h1 class="text-2xl font-bold">Nossa Call</h1>
+    <input id="roomInput" placeholder="código da sala (ex: nosso-codigo)" class="w-full bg-zinc-800 rounded-lg px-3 py-2 outline-none focus:ring-2 ring-indigo-500">
+    <input id="nameInput" placeholder="seu nome" class="w-full bg-zinc-800 rounded-lg px-3 py-2 outline-none focus:ring-2 ring-indigo-500">
+    <button id="joinBtn" class="w-full bg-indigo-600 hover:bg-indigo-500 rounded-lg py-2 font-semibold">Entrar</button>
+    <button id="installBtn" class="hidden w-full bg-zinc-800 hover:bg-zinc-700 rounded-lg py-2 text-sm">Instalar como app</button>
+    <p id="lobbyErr" class="text-red-400 text-sm"></p>
+    <p class="text-xs text-zinc-600">Atalhos na call: M = mutar, D = ensurdecer, S = compartilhar tela.</p>
+  </div>
+</div>
+
+<!-- Sala -->
+<div id="room" class="hidden flex-1 flex flex-col min-h-0">
+  <div class="flex items-center justify-between px-4 py-2 text-sm bg-zinc-950 border-b border-zinc-900">
+    <span id="status" class="text-zinc-400">Conectando…</span>
+    <div class="flex gap-2 items-center">
+      <span id="stats" class="text-xs text-zinc-500"></span>
+      <button id="copyBtn" class="bg-zinc-800 hover:bg-zinc-700 rounded px-3 py-1">Copiar link</button>
+    </div>
+  </div>
+
+  <div class="flex-1 min-h-0 flex flex-col lg:flex-row gap-3 p-3">
+    <div id="stage" class="relative flex-1 bg-zinc-950 rounded-xl border border-zinc-900 flex items-center justify-center min-h-0">
+      <video id="screenVideo" autoplay playsinline muted class="max-h-full max-w-full hidden"></video>
+      <p id="stageHint" class="text-zinc-600">Nenhuma tela compartilhada</p>
+      <div class="absolute top-2 right-2 gap-2 hidden" id="stageBtns">
+        <button id="fsBtn" class="bg-black/60 rounded px-2 py-1 text-xs">Tela cheia</button>
+        <button id="pipBtn" class="bg-black/60 rounded px-2 py-1 text-xs">PiP</button>
+      </div>
+      <div class="absolute bottom-2 left-2 hidden items-center gap-2 bg-black/60 rounded px-2 py-1 text-xs" id="screenVol">
+        Som da tela <input id="screenVolRange" type="range" min="0" max="100" value="100">
+      </div>
+    </div>
+
+    <div class="flex lg:flex-col gap-3 lg:w-56">
+      <div class="card flex-1 lg:flex-none" id="meCard">
+        <div class="avatar" id="meAvatar">V</div>
+        <div class="text-sm font-semibold" id="meName">Você</div>
+        <div class="text-xs text-zinc-500" id="meMic">Mic ligado</div>
+      </div>
+      <div class="card flex-1 lg:flex-none" id="peerCard">
+        <div class="avatar" id="peerAvatar">?</div>
+        <div class="text-sm font-semibold" id="peerName">Aguardando…</div>
+        <div class="text-xs text-zinc-500 mb-1" id="peerInfo">—</div>
+        <label class="text-xs text-zinc-400">Volume <span id="peerVolLbl">100%</span></label>
+        <input id="peerVol" type="range" min="0" max="200" value="100" class="w-full">
+      </div>
+    </div>
+  </div>
+
+  <!-- Barra inferior -->
+  <div class="flex justify-center gap-2 p-3 bg-zinc-950 border-t border-zinc-900 flex-wrap">
+    <button id="muteBtn" class="ctl">Mutar</button>
+    <button id="deafBtn" class="ctl">Ensurdecer</button>
+    <button id="shareBtn" class="ctl bg-indigo-600 hover:bg-indigo-500">Compartilhar tela</button>
+    <button id="setBtn" class="ctl">Config</button>
+    <button id="reconBtn" class="ctl hidden">Reconectar</button>
+    <button id="leaveBtn" class="ctl bg-red-600 hover:bg-red-500">Sair</button>
+  </div>
+</div>
+
+<!-- Configurações -->
+<div id="settings" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
+  <div class="bg-zinc-900 rounded-2xl p-5 w-full max-w-md space-y-3 border border-zinc-800 max-h-full overflow-auto">
+    <h2 class="font-bold text-lg">Configurações</h2>
+    <label class="block text-sm">Microfone <select id="micSel" class="sel"></select></label>
+    <label class="block text-sm">Saída de áudio <select id="outSel" class="sel"></select></label>
+    <div class="grid grid-cols-2 gap-2 text-sm">
+      <label><input type="checkbox" id="ns" checked> Supressão de ruído</label>
+      <label><input type="checkbox" id="ec" checked> Cancelar eco</label>
+      <label><input type="checkbox" id="agc" checked> Ganho automático</label>
+      <label><input type="checkbox" id="studio"> Modo estúdio</label>
+    </div>
+    <hr class="border-zinc-800">
+    <div class="grid grid-cols-3 gap-2 text-sm">
+      <label>Resolução <select id="resSel" class="sel"><option value="720">720p</option><option value="1080" selected>1080p</option><option value="1440">1440p</option></select></label>
+      <label>FPS <select id="fpsSel" class="sel"><option>30</option><option selected>60</option></select></label>
+      <label>Codec <select id="codecSel" class="sel"><option value="H264" selected>H.264 (celular)</option><option value="VP9">VP9</option><option value="VP8">VP8</option></select></label>
+    </div>
+    <label class="block text-sm">Bitrate máx.: <span id="brLbl">8000</span> kbps
+      <input id="brRange" type="range" min="2000" max="20000" step="500" value="8000" class="w-full"></label>
+    <button id="closeSet" class="w-full bg-indigo-600 rounded-lg py-2">Aplicar e fechar</button>
+  </div>
+</div>
+
+<div id="toast" class="fixed top-3 left-1/2 -translate-x-1/2 bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2 text-sm hidden z-50"></div>
+<audio id="peerAudio" autoplay></audio>
+<script src="app.js"></script>
+</body>
+</html>

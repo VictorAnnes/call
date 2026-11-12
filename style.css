@@ -1,0 +1,16 @@
+:root{color-scheme:dark}
+body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
+.card{background:#0c0c0f;border:1px solid #18181b;border-radius:12px;padding:12px;text-align:center}
+.avatar{width:64px;height:64px;margin:0 auto 6px;border-radius:50%;background:#4f46e5;display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:700;border:3px solid transparent;transition:border-color .1s,box-shadow .1s}
+.avatar.speaking{border-color:#22c55e;box-shadow:0 0 12px #22c55e88}
+.ctl{background:#27272a;border-radius:10px;padding:10px 16px;font-size:14px;font-weight:600}
+.ctl:hover{background:#3f3f46}
+.ctl.off{background:#b91c1c}
+.sel{display:block;width:100%;margin-top:4px;background:#27272a;border-radius:8px;padding:6px}
+input[type=range]{accent-color:#6366f1}
+html,body{height:100%;overscroll-behavior:none;-webkit-tap-highlight-color:transparent}
+body{padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+button{cursor:pointer;user-select:none}
+.hidden{display:none!important}
+::-webkit-scrollbar{width:8px}::-webkit-scrollbar-thumb{background:#27272a;border-radius:4px}
+@media (display-mode:standalone){#installBtn{display:none!important}}
